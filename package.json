@@ -1,0 +1,23 @@
+{
+  "name": "aqx-trading-automation",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Portable Playwright assessment suite for the AQX Trader web platform. Read-only unless demo execution is explicitly confirmed.",
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test tests/smoke",
+    "test:execution": "playwright test --grep @execution --workers=1",
+    "test:list": "playwright test --list",
+    "test:report": "playwright show-report",
+    "typecheck": "tsc --noEmit",
+    "check:env": "node scripts/check-environment.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@types/node": "^22.15.3",
+    "typescript": "^5.8.3"
+  }
+}
