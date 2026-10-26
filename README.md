@@ -36,6 +36,52 @@ The demo execution cases are names only. They do not navigate, click, or submit.
 
 Use this only on a demo or test account. The project has no real-money mode.
 
+## Open it in GitHub Codespaces
+ 
+1. Open the repository on GitHub.
+2. Click **Code**.
+3. Choose the **Codespaces** tab.
+4. Click **Create codespace on main**.
+5. Wait until the terminal prompt appears.
+ 
+The Codespace browser is a new machine. A login saved in your laptop browser is not available there.
+ 
+## Install dependencies and Chromium
+ 
+In the Codespace terminal:
+ 
+```bash
+cd aqx-trading-automation   # skip this if the codespace opened inside the project
+node -v                     # expect v20 or newer
+npm ci
+npx playwright install --with-deps chromium
+npm run typecheck
+npm run check:env
+npm run test:list
+npm run test:smoke
+npm test
+```
+ 
+`npm ci` installs the locked dependencies, including Playwright. `.npmrc` points that install at the public npm registry. `npx playwright install --with-deps chromium` downloads Chromium and the operating-system libraries it needs. The environment check prints whether demo execution is disabled. It prints `<redacted>` or `<unset>` for passwords and never prints the password itself.
+ 
+## Set BASE_URL
+ 
+For a first smoke run you can leave the default. Terminal tests will skip until you set the real terminal address.
+ 
+```bash
+export BASE_URL="https://your-demo-terminal.example/path"
+```
+ 
+To keep the value for later shells in the Codespace, copy the example file and edit it:
+ 
+```bash
+cp .env.example .env
+```
+ 
+Set `BASE_URL` in `.env`. Leave the two demo flags empty. Shell exports override `.env`. Do not commit `.env`.
+ 
+Tests open that full address, including its path. A value such as `https://demo.example/terminal` stays on `/terminal`.
+
 ## Project structure
 
 ```text
