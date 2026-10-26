@@ -1,6 +1,6 @@
 import { test, type Locator, type Page } from '@playwright/test';
 
-import { resolveBaseUrl, safePageUrl } from '../utils/env';
+import { safePageUrl } from '../utils/env';
 
 export type TradingCredentials = {
   username: string;
@@ -12,6 +12,7 @@ const USER_ID = 'login-user-id';
 const PASSWORD = 'login-password';
 const SUBMIT = 'login-submit';
 const ORDER_TYPE_DROPDOWN = 'trade-dropdown-order-type';
+const NOTIFICATION_SELECTOR = 'notification-selector';
 const FORM_WAIT_MS = 8_000;
 const TERMINAL_WAIT_MS = 20_000;
 
@@ -29,7 +30,7 @@ export async function login(page: Page, credentials: TradingCredentials): Promis
     );
   }
 
-  const dropdown = page.getByTestId(ORDER_TYPE_DROPDOWN);
+  const dropdown = page.getByTestId(NOTIFICATION_SELECTOR);
   const passwordField = page.getByTestId(PASSWORD);
   await passwordField.or(dropdown).first().waitFor({ state: 'visible', timeout: FORM_WAIT_MS }).catch(() => undefined);
   if (await isVisible(dropdown)) {
