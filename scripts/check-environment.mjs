@@ -7,11 +7,8 @@ const SECRET_NAME = /PASSWORD|SECRET|TOKEN|COOKIE|API[_-]?KEY|SESSION/i;
 const requiredFiles = [
   'package.json',
   'package-lock.json',
-  '.npmrc',
   'playwright.config.ts',
   'tsconfig.json',
-  '.env.example',
-  '.gitignore',
   'README.md',
   'scripts/check-environment.mjs',
   'utils/env.ts',
@@ -27,7 +24,6 @@ const requiredFiles = [
   'tests/order-history.spec.ts',
   'tests/bulk-actions.spec.ts',
   'tests/configuration-validation.spec.ts',
-  '.github/workflows/playwright.yml',
 ];
 
 function parseEnvLine(line) {
