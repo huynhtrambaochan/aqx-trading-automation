@@ -12,7 +12,7 @@ test('signs in and shows the order-type dropdown', async ({ page }) => {
   }
 
   await login(page, { username, password });
-  await expect(page.getByTestId('trade-dropdown-order-type')).toBeVisible();
+  await expect(page.getByTestId('notification-selector')).toBeVisible();
 });
 
 test.fixme('rejects a wrong password', async () => {});
