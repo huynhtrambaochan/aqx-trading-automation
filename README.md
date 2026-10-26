@@ -70,17 +70,9 @@ For a first smoke run you can leave the default. Terminal tests will skip until 
  
 ```bash
 export BASE_URL="https://your-demo-terminal.example/path"
+export TRADING_USERNAME='xxx'
+export TRADING_PASSWORD='xxx'
 ```
- 
-To keep the value for later shells in the Codespace, copy the example file and edit it:
- 
-```bash
-cp .env.example .env
-```
- 
-Set `BASE_URL` in `.env`. Leave the two demo flags empty. Shell exports override `.env`. Do not commit `.env`.
- 
-Tests open that full address, including its path. A value such as `https://demo.example/terminal` stays on `/terminal`.
 
 ## Project structure
 
