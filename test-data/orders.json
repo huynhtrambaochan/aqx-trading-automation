@@ -1,0 +1,34 @@
+{
+  "purpose": "Sample demo-order values for opted-in execution tests. The read-only suite does not submit them.",
+  "instrument": {
+    "value": null,
+    "note": "Use the instrument already selected in the terminal. This file does not name a symbol."
+  },
+  "market": {
+    "volume": "0.01",
+    "stopLossDistance": "0.0010",
+    "takeProfitDistance": "0.0010"
+  },
+  "pending": {
+    "limit": {
+      "volume": "0.01",
+      "priceDistance": "0.0020"
+    },
+    "stop": {
+      "volume": "0.01",
+      "priceDistance": "0.0020"
+    },
+    "stopLimit": {
+      "volume": "0.01",
+      "stopDistance": "0.0030",
+      "limitDistance": "0.0020"
+    },
+    "expiry": {
+      "note": "Read expiry only when the terminal shows a control for it.",
+      "candidateLabels": ["GTC", "GTD", "Day"]
+    }
+  },
+  "partialClose": {
+    "volume": "0.01"
+  }
+}
