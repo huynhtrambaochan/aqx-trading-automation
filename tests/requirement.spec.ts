@@ -73,8 +73,8 @@ test.describe('requirement scenarios', { tag: '@execution' }, () => {
     const session = requireSession(page);
     await ensureOneClickTrading(session, true);
     await ensureOpenPositionCount(session, 0);
-    await page.getByTestId('trade-input-volume').click();
-    await page.getByTestId('trade-input-volume-increase').click();
+    await session.getByTestId('trade-input-volume').click();
+    await session.getByTestId('trade-input-volume-increase').click();
     await placeUntilOpenCount(session, 1, () => placeOneClickBuy(session));
     await expectOpenPositionCount(openPositionsTab(session), 1);
     await bulkCloseAllPositions(session);
