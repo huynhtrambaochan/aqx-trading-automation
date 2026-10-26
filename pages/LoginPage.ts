@@ -1,4 +1,4 @@
-import { type Locator, type Page } from '@playwright/test';
+import { test, type Locator, type Page } from '@playwright/test';
 
 import { resolveBaseUrl, safePageUrl } from '../utils/env';
 
@@ -29,13 +29,17 @@ export async function login(page: Page, credentials: TradingCredentials): Promis
 
   const dropdown = page.getByTestId(ORDER_TYPE_DROPDOWN);
   if (await isVisible(dropdown)) {
+    await takeSnapshot(page, 'after-login');
     return;
   }
 
   const passwordField = await waitForPasswordField(page, dropdown);
   if (!passwordField) {
+    await takeSnapshot(page, 'after-login');
     return;
   }
+
+  await takeSnapshot(page, 'login-page', [passwordField]);
 
   const scope = await formScope(passwordField, page);
   const usernameField = await firstUnique(
@@ -59,6 +63,16 @@ export async function login(page: Page, credentials: TradingCredentials): Promis
       `LOGIN_FAILED: The order-type dropdown was not visible at ${where} after sign-in. The GUI was not verified. No trading action was performed.`,
     );
   }
+
+  await takeSnapshot(page, 'after-login');
+}
+
+async function takeSnapshot(page: Page, name: string, mask: Locator[] = []): Promise<void> {
+  await test.step(`snapshot ${name}`, async () => {
+    const file = test.info().outputPath(`${name}.png`);
+    await page.screenshot({ path: file, fullPage: true, mask });
+    await test.info().attach(name, { path: file, contentType: 'image/png' });
+  });
 }
 
 async function waitForPasswordField(page: Page, dropdown: Locator): Promise<Locator | undefined> {
