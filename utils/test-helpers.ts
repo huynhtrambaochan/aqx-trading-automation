@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 
+import { login } from '../pages/LoginPage';
 import { EXECUTION_DISABLED_REASON, isDemoExecutionAllowed, safePageUrl } from './env';
 import type { OrderPanel } from '../pages/OrderPanel';
 import type { TradingTerminalPage } from '../pages/TradingTerminalPage';
@@ -82,7 +83,13 @@ export function skipUnlessSingleVisible(matches: Locator[], actionName: string):
 
 export async function openReadOnlyTerminal(terminal: TradingTerminalPage): Promise<void> {
   annotate(test.info(), 'safety', 'read-only');
-  await terminal.goto();
+  const username = process.env.TRADING_USERNAME?.trim();
+  const password = process.env.TRADING_PASSWORD?.trim();
+  if (username && password) {
+    await test.step('log in', () => login(terminal.page, { username, password }));
+  } else {
+    await terminal.goto();
+  }
   const inspection = await terminal.inspect();
   annotate(test.info(), 'page', safePageUrl(terminal.page.url()));
 
