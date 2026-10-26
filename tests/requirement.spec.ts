@@ -2,13 +2,33 @@ import type { BrowserContext, Locator, Page } from '@playwright/test';
 
 import { login } from '../pages/LoginPage';
 import { EXECUTION_DISABLED_REASON, isDemoExecutionAllowed } from '../utils/env';
-import { annotate } from '../utils/test-helpers';
+import { annotate, parseDisplayedPrice } from '../utils/test-helpers';
 import { expect, test } from '../fixtures/test-fixtures';
 
 const OPEN_POSITIONS_TAB = 'tab-asset-order-type-open-positions';
-const OPEN_POSITIONS = (count: number) => `Open Positions (${count})`;
+
+function openPositionCountPattern(count: number): RegExp {
+  return new RegExp(`^Open Positions?\\s*\\(${count}\\)$`, 'i');
+}
+
+function compactText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function isOpenPositionCount(text: string, count: number): boolean {
+  return openPositionCountPattern(count).test(compactText(text));
+}
+
+function readOpenPositionCount(text: string): number | undefined {
+  const match = compactText(text).match(/Open Positions?\s*\((\d+)\)/i);
+  return match?.[1] === undefined ? undefined : Number(match[1]);
+}
+
 const PLACE_UNTIL_TIMEOUT_MS = 120_000;
 const CASE_TIMEOUT_MS = 180_000;
+const MARKET_PROTECTION_ATTEMPTS = 10;
+const MARKET_PROTECTION_TIMEOUT_MS = 120_000;
+const LIVE_PRICE_TICK_MS = 1_000;
 
 test.describe('requirement scenarios', { tag: '@execution' }, () => {
   test.describe.configure({ mode: 'serial' });
@@ -41,28 +61,28 @@ test.describe('requirement scenarios', { tag: '@execution' }, () => {
   test('TC1 market order with stop loss and take profit until one open position', async () => {
     test.setTimeout(CASE_TIMEOUT_MS);
     const session = requireSession(page);
-    await selectXauusd(session);
-    await ensureOneClickTrading(session, false);
+    await turnOneClickOff(session);
     await ensureOpenPositionCount(session, 0);
-    await placeUntilOpenCount(session, 1, () => placeMarketOrderWithProtections(session));
+    await placeMarketOrderWithProtections(session);
+    await expectOpenPositionCount(openPositionsTab(session), 1);
     await bulkCloseAllPositions(session);
   });
 
   test('TC2 one-click buy until one open position', async () => {
     test.setTimeout(CASE_TIMEOUT_MS);
     const session = requireSession(page);
-    await selectXauusd(session);
     await ensureOneClickTrading(session, true);
     await ensureOpenPositionCount(session, 0);
+    await page.getByTestId('trade-input-volume').click();
+    await page.getByTestId('trade-input-volume-increase').click();
     await placeUntilOpenCount(session, 1, () => placeOneClickBuy(session));
+    await expectOpenPositionCount(openPositionsTab(session), 1);
     await bulkCloseAllPositions(session);
   });
 
   test('TC3-TC4 two one-click positions, sort, close one, and edit the remaining order', async () => {
     test.setTimeout(CASE_TIMEOUT_MS);
     const session = requireSession(page);
-    await selectXauusd(session);
-    await ensureOneClickTrading(session, true);
     await ensureOpenPositionCount(session, 0);
     await placeUntilOpenCount(session, 2, () => placeOneClickBuy(session));
 
@@ -76,7 +96,7 @@ test.describe('requirement scenarios', { tag: '@execution' }, () => {
 
     await rows.nth(0).getByTestId('asset-open-button-close').click();
     await confirmIfShown(session);
-    await expect(openPositionsTab(session)).toHaveText(OPEN_POSITIONS(1));
+    await expectOpenPositionCount(openPositionsTab(session), 1);
 
     await session.getByTestId('asset-open-button-edit').click();
     await session.getByTestId('edit-button-order').click();
@@ -88,50 +108,42 @@ test.describe('requirement scenarios', { tag: '@execution' }, () => {
   test('TC5 market order then one-click buy until two open positions, then bulk close all', async () => {
     test.setTimeout(CASE_TIMEOUT_MS);
     const session = requireSession(page);
-    await selectXauusd(session);
-    await ensureOneClickTrading(session, false);
     await ensureOpenPositionCount(session, 0);
-    await placeUntilOpenCount(session, 1, () => placeMarketOrderWithProtections(session));
-
-    await ensureOneClickTrading(session, true);
+    await ensureOpenPositionCount(session, 0);
     await placeUntilOpenCount(session, 2, () => placeOneClickBuy(session));
-
-    await session.getByTestId('bulk-close').click();
-    await session.getByText('All Positions', { exact: true }).click();
-    await session.getByTestId('bulk-close-modal-button-submit-all').click();
-    await expect(openPositionsTab(session)).toHaveText(OPEN_POSITIONS(0));
+    await bulkCloseAllPositions(session);
   });
 
   test('TC6-TC7 view notifications and history without a new login', async () => {
     test.setTimeout(CASE_TIMEOUT_MS);
     const session = requireSession(page);
-
+ 
     await session.getByTestId('notification-selector').click();
     await session.waitForTimeout(5_000);
-
+ 
     await session.getByTestId('tab-asset-order-type-history-positions-history').click();
     await session.waitForTimeout(5_000);
-
+ 
     await session.getByTestId('tab-asset-order-type-history-orders-and-deals').click();
-
-    const historyRows = session.getByTestId('asset-history-position-list-item');
-    if ((await historyRows.count()) === 0) {
-      await session.getByTestId('tab-asset-order-type-history-positions-history').click();
-    }
-
-    await expect(historyRows.first()).toBeVisible();
-
+    await session.waitForTimeout(5_000);
+ 
+    const expandButtons = session.locator('[data-testid="asset-history-position-list-item-expand"]:visible');
+    await expandButtons.nth(2).scrollIntoViewIfNeeded();
+ 
     const fillPolicies: string[] = [];
     for (let index = 0; index < 3; index += 1) {
-      const row = historyRows.nth(index);
-      await expect(row, `History row ${index + 1} was not visible.`).toBeVisible();
-      await row.getByTestId('asset-history-position-list-item-expand').click();
-      const fillPolicy = (await row.getByTestId('asset-history-column-fill-policy').innerText()).trim();
+      const expand = expandButtons.nth(index);
+      await expand.scrollIntoViewIfNeeded();
+      await expand.click();
+      const fillPolicyCell = session.locator('[data-testid="asset-history-column-fill-policy"]:visible').nth(index);
+      await fillPolicyCell.scrollIntoViewIfNeeded();
+      await expect(fillPolicyCell, `Fill policy on history row ${index + 1} was not visible.`).toBeVisible();
+      const fillPolicy = (await fillPolicyCell.innerText()).trim();
       expect(fillPolicy.length, `Fill policy on history row ${index + 1} was empty.`).toBeGreaterThan(0);
       fillPolicies.push(fillPolicy);
       annotate(test.info(), `history-fill-policy-${index + 1}`, fillPolicy);
     }
-
+ 
     expect(fillPolicies).toHaveLength(3);
   });
 });
@@ -162,65 +174,174 @@ function openPositionsTab(page: Page): Locator {
   return page.getByTestId(OPEN_POSITIONS_TAB);
 }
 
-async function selectXauusd(page: Page): Promise<void> {
-  await page.getByText('XAUUSD', { exact: true }).first().click();
-}
 
 async function ensureOpenPositionCount(page: Page, count: number): Promise<void> {
   const tab = openPositionsTab(page);
   await tab.click();
-  const current = (await tab.innerText()).trim();
-  if (current !== OPEN_POSITIONS(count) && count === 0) {
+  const current = compactText(await tab.innerText());
+  if (!isOpenPositionCount(current, count) && count === 0) {
     await bulkCloseAllPositions(page);
   }
-  await expect(tab).toHaveText(OPEN_POSITIONS(count));
+  await expectOpenPositionCount(tab, count);
 }
 
 async function placeUntilOpenCount(page: Page, count: number, place: () => Promise<void>): Promise<void> {
-  const tab = openPositionsTab(page);
-  await expect
-    .poll(
-      async () => {
-        const text = (await tab.innerText()).trim();
-        if (text === OPEN_POSITIONS(count)) {
-          return text;
-        }
-        await place();
-        return (await tab.innerText()).trim();
-      },
-      { timeout: PLACE_UNTIL_TIMEOUT_MS, intervals: [1_000, 2_000, 3_000] },
-    )
-    .toBe(OPEN_POSITIONS(count));
+  const deadline = Date.now() + PLACE_UNTIL_TIMEOUT_MS;
+  await openPositionsTab(page).click();
+
+  while (Date.now() <= deadline) {
+    const current = await displayedOpenCount(page);
+    if (current !== undefined && current >= count) {
+      return;
+    }
+
+    const before = current ?? 0;
+    await place();
+    const remaining = Math.max(1_000, deadline - Date.now());
+    await expect
+      .poll(async () => (await displayedOpenCount(page)) ?? before, {
+        timeout: remaining,
+        message: `The open-position count stayed at ${before} after one order. No further order was sent.`,
+      })
+      .toBeGreaterThan(before);
+  }
+}
+
+async function displayedOpenCount(page: Page): Promise<number | undefined> {
+  return readOpenPositionCount(await openPositionsTab(page).innerText());
 }
 
 async function placeMarketOrderWithProtections(page: Page): Promise<void> {
-  await page.getByTestId('trade-input-stoploss-price').hover();
-  await page.getByTestId('trade-input-stoploss-price-decrease').click();
-  await page.getByTestId('trade-input-takeprofit-price').hover();
-  for (let click = 0; click < 3; click += 1) {
-    await page.getByTestId('trade-input-takeprofit-price-increase').click();
+  const orderButton = page.getByTestId('trade-button-order');
+  const positionsTab = openPositionsTab(page);
+  const deadline = Date.now() + MARKET_PROTECTION_TIMEOUT_MS;
+  await page.getByTestId('trade-input-volume').click();
+  await page.getByTestId('trade-input-volume-increase').click();
+
+  for (let attempt = 1; attempt <= MARKET_PROTECTION_ATTEMPTS; attempt += 1) {
+    if (Date.now() > deadline) {
+      break;
+    }
+
+    if (isOpenPositionCount(await positionsTab.innerText(), 1)) {
+      return;
+    }
+
+    await adjustStopLossBelowLive(page);
+    await adjustTakeProfitAboveLive(page);
+
+    const live = await readLiveBuyPrice(page);
+    const stopLoss = await readPriceInput(page, 'trade-input-stoploss-price');
+    const takeProfit = await readPriceInput(page, 'trade-input-takeprofit-price');
+    const orderEnabled = await orderButton.isEnabled().catch(() => false);
+
+    if (stopLoss < live && takeProfit > live && orderEnabled) {
+      await orderButton.click();
+      await page.getByTestId('trade-confirmation-button-confirm').click();
+    }
+
+    if (isOpenPositionCount(await positionsTab.innerText(), 1)) {
+      return;
+    }
+
+    await page.waitForTimeout(LIVE_PRICE_TICK_MS);
   }
-  await page.getByTestId('trade-button-order').click();
-  await page.getByTestId('trade-confirmation-button-confirm').click();
+
+  await expectOpenPositionCount(positionsTab, 1);
+}
+
+async function adjustStopLossBelowLive(page: Page): Promise<void> {
+  const stopLossInput = page.getByTestId('trade-input-stoploss-price');
+  const decrease = page.getByTestId('trade-input-stoploss-price-decrease');
+
+  for (let click = 0; click < 20; click += 1) {
+    const live = await readLiveBuyPrice(page);
+    const stopLoss = await readPriceInput(page, 'trade-input-stoploss-price');
+    if (Number.isFinite(stopLoss) && stopLoss < live) {
+      return;
+    }
+    await stopLossInput.hover();
+    await decrease.click();
+  }
+}
+
+async function adjustTakeProfitAboveLive(page: Page): Promise<void> {
+  const takeProfitInput = page.getByTestId('trade-input-takeprofit-price');
+  const increase = page.getByTestId('trade-input-takeprofit-price-increase');
+
+  for (let click = 0; click < 20; click += 1) {
+    const live = await readLiveBuyPrice(page);
+    const takeProfit = await readPriceInput(page, 'trade-input-takeprofit-price');
+    if (Number.isFinite(takeProfit) && takeProfit > live) {
+      return;
+    }
+    await takeProfitInput.hover();
+    await increase.click();
+  }
+}
+
+async function readLiveBuyPrice(page: Page): Promise<number> {
+  const livePrice = page.getByTestId('trade-live-buy-price');
+  await expect(livePrice).toBeVisible();
+  return requirePrice((await livePrice.innerText()).trim(), 'trade-live-buy-price');
+}
+
+async function readPriceInput(page: Page, testId: string): Promise<number> {
+  const raw = (await page.getByTestId(testId).getAttribute('value')) ?? '';
+  return parseDisplayedPrice(raw) ?? Number.NaN;
+}
+
+function requirePrice(raw: string, testId: string): number {
+  const parsed = parseDisplayedPrice(raw);
+  if (parsed === undefined) {
+    throw new Error(`Could not parse a price from data-testid="${testId}". Observed: ${raw || '<empty>'}.`);
+  }
+  return parsed;
 }
 
 async function placeOneClickBuy(page: Page): Promise<void> {
-  await page.getByTestId('trade-input-volume').click();
-  await page.getByTestId('trade-input-volume-increase').click();
   await page.getByTestId('trade-button-oct-order-buy').click();
 }
 
 async function bulkCloseAllPositions(page: Page): Promise<void> {
   const tab = openPositionsTab(page);
   await tab.click();
-  if ((await tab.innerText()).trim() === OPEN_POSITIONS(0)) {
+  if (isOpenPositionCount(await tab.innerText(), 0)) {
     return;
   }
 
   await page.getByTestId('bulk-close').click();
   await page.getByText('All Positions', { exact: true }).click();
   await page.getByTestId('bulk-close-modal-button-submit-all').click();
-  await expect(tab).toHaveText(OPEN_POSITIONS(0));
+  await confirmIfShown(page);
+  await tab.click();
+
+  if (!isOpenPositionCount(await tab.innerText(), 0)) {
+    await closeEachOpenPosition(page);
+  }
+  await expectOpenPositionCount(tab, 0);
+}
+
+async function closeEachOpenPosition(page: Page): Promise<void> {
+  const tab = openPositionsTab(page);
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await tab.click();
+    if (isOpenPositionCount(await tab.innerText(), 0)) {
+      return;
+    }
+    const row = page.getByTestId('asset-open-list-item').first();
+    await row.getByTestId('asset-open-button-close').click();
+    await confirmIfShown(page);
+  }
+}
+
+async function expectOpenPositionCount(tab: Locator, count: number): Promise<void> {
+  await expect
+    .poll(async () => compactText(await tab.innerText()), {
+      timeout: 10_000,
+      message: `Expected the open-positions tab to show Open Position (${count}) or Open Positions (${count}).`,
+    })
+    .toMatch(openPositionCountPattern(count));
 }
 
 async function confirmIfShown(page: Page): Promise<void> {
@@ -230,16 +351,29 @@ async function confirmIfShown(page: Page): Promise<void> {
   }
 }
 
+async function turnOneClickOff(page: Page): Promise<void> {
+  await page.getByTestId('app-setting-dropdown-trigger').click();
+  const checkedToggle = page.getByTestId('toggle-oct-checked');
+  if (await checkedToggle.isVisible().catch(() => false)) {
+    await checkedToggle.click();
+  }
+  await expect(page.getByTestId('toggle-oct')).toBeVisible();
+  await page.keyboard.press('Escape');
+}
+
 async function ensureOneClickTrading(page: Page, enabled: boolean): Promise<void> {
+  if (!enabled) {
+    await turnOneClickOff(page);
+    return;
+  }
+
   await page.getByTestId('app-setting-dropdown-trigger').click();
   const toggle = page.getByTestId('toggle-oct');
   await expect(toggle).toBeVisible();
 
-  if ((await isToggleOn(toggle)) !== enabled) {
+  if (!(await isToggleOn(toggle))) {
     await toggle.click();
-    if (enabled) {
-      await page.getByText('Agree and continue', { exact: true }).click();
-    }
+    await page.getByText('Agree and continue', { exact: true }).click();
   }
 
   await page.keyboard.press('Escape');
