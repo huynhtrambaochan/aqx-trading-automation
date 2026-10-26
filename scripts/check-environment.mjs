@@ -16,6 +16,7 @@ const requiredFiles = [
   'pages/TradingTerminalPage.ts',
   'pages/OrderPanel.ts',
   'fixtures/test-fixtures.ts',
+  'tests/smoke/trading-terminal.spec.ts',
   'test-data/orders.json',
   'tests/market-orders.spec.ts',
   'tests/pending-orders.spec.ts',
